@@ -18,7 +18,7 @@ fn should_generate_rfc3164_messages_in_memory() {
     };
 
     let (sender, receiver) = mpsc::channel();
-    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(InMemory::<String>::new(sender));
+    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(InMemory::<String>::new(sender)).with_buffer();
     logger.write_str(Severity::LOG_ERR, "my error").expect("Success");
 
     let mut line = receiver.try_recv().expect("to have line");
@@ -66,7 +66,7 @@ fn should_generate_rfc3164_messages_udp() {
         remote_addr: (LOCAL_HOST, 5514).into(),
     };
 
-    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(udp);
+    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(udp).with_buffer();
     logger.write_str(Severity::LOG_ERR, "my udp error").expect("Success");
 }
 
@@ -86,7 +86,7 @@ fn should_generate_rfc3164_messages_tcp() {
         timeout: Some(time::Duration::from_secs(5)),
     };
 
-    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(tcp);
+    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(tcp).with_buffer();
     if let Err(error) = logger.write_str(Severity::LOG_ERR, "my tcp error") {
         //This test is used locally mostly so if connection refused do nothing
         assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
@@ -109,6 +109,6 @@ fn should_generate_rfc3164_messages_unix() {
 
     //All unix systems should have it, right?
     let unix = Unix::new_system().expect("Find syslog socket");
-    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(unix);
+    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(unix).with_buffer();
     logger.write_str(Severity::LOG_ERR, "my unix error").expect("Successfully write");
 }

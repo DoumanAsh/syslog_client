@@ -119,6 +119,21 @@ impl Timestamp {
         }
     }
 
+    ///Creates new current time instance or fallbacks to default UTC time
+    pub fn now_utc() -> Self {
+        match time_c::Time::now_utc() {
+            Some(time_c::Time { sec, min, hour, month_day, month, year, .. }) => Self {
+                year,
+                month: month.saturating_sub(1),
+                day: month_day,
+                hour,
+                sec,
+                min,
+            },
+            None => Self::utc(),
+        }
+    }
+
     const fn rfc3164_month(&self) -> &'static str {
         match self.month {
             0 => "Jan",

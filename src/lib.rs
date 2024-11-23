@@ -25,6 +25,8 @@ macro_rules! unreach {
 pub mod syslog;
 pub use syslog::{Facility, Severity};
 pub mod writer;
+#[cfg(feature = "log04")]
+pub mod log04;
 
 ///Syslogger
 pub struct Syslog {
@@ -63,6 +65,59 @@ impl Syslog {
     ///Creates RFC-3164 format logger using specified `writer`
     pub const fn rfc3164<W: writer::MakeWriter>(self, writer: W) -> Rfc3164Logger<W> {
         Rfc3164Logger::new(self, writer)
+    }
+
+    #[cfg(feature = "log04")]
+    fn rfc3164_write_fmt<W: writer::MakeWriter>(&self, writer: &mut Writer<W>, buffer: &mut Rfc3164Buffer, severity: Severity, text: &core::fmt::Arguments<'_>) -> Result<(), W::Error> {
+        let timestamp = syslog::header::Timestamp::now_utc();
+        let header = syslog::header::Rfc3164 {
+            pri: severity.priority(self.facility),
+            hostname: &self.hostname,
+            tag: &self.tag,
+            pid: os_id::process::get_raw_id() as _,
+            timestamp,
+        };
+
+        header.write_buffer(buffer);
+        buffer.push_str(" ");
+        let _ = core::fmt::Write::write_fmt(buffer, *text);
+        writer.write_buffer(buffer.as_str(), severity, self.retry_count)?;
+
+        buffer.clear();
+        Ok(())
+    }
+
+    fn rfc3164_write_str<W: writer::MakeWriter>(&self, writer: &mut Writer<W>, buffer: &mut Rfc3164Buffer, severity: Severity, mut text: &str) -> Result<(), W::Error> {
+        let timestamp = syslog::header::Timestamp::now_utc();
+        let header = syslog::header::Rfc3164 {
+            pri: severity.priority(self.facility),
+            hostname: &self.hostname,
+            tag: &self.tag,
+            pid: os_id::process::get_raw_id() as _,
+            timestamp,
+        };
+
+        header.write_buffer(buffer);
+        buffer.push_str(" ");
+        let header_size = buffer.len();
+
+        loop {
+            let consumed = buffer.push_str(text);
+            text = &text[consumed..];
+
+            writer.write_buffer(buffer.as_str(), severity, self.retry_count)?;
+            //This is safe because we know exact header size written
+            unsafe {
+                buffer.set_len(header_size);
+            }
+
+            if text.is_empty() {
+                break;
+            }
+        }
+
+        buffer.clear();
+        Ok(())
     }
 }
 
@@ -123,7 +178,6 @@ pub type Rfc3164Buffer = str_buf::StrBuf<{ str_buf::capacity(1024) }>;
 pub struct Rfc3164Logger<W: writer::MakeWriter> {
     syslog: Syslog,
     writer: Writer<W>,
-    buffer: Rfc3164Buffer,
 }
 
 impl<W: writer::MakeWriter> Rfc3164Logger<W> {
@@ -133,53 +187,44 @@ impl<W: writer::MakeWriter> Rfc3164Logger<W> {
         Self {
             syslog,
             writer: Writer::new(writer),
+        }
+    }
+
+    ///Adds internal buffer to the logger
+    pub const fn with_buffer(self) -> Rfc3164BufferedLogger<W> {
+        Rfc3164BufferedLogger::new(self)
+    }
+
+    #[inline(always)]
+    ///Writes specified string onto syslog
+    ///
+    ///If text doesn't fit limit of 1024 bytes, then it is split into chunks
+    pub fn write_str(&mut self, buffer: &mut Rfc3164Buffer, severity: Severity, text: &str) -> Result<(), W::Error> {
+        self.syslog.rfc3164_write_str(&mut self.writer, buffer, severity, text)
+    }
+}
+
+///RFC 3164 logger
+pub struct Rfc3164BufferedLogger<W: writer::MakeWriter> {
+    inner: Rfc3164Logger<W>,
+    buffer: Rfc3164Buffer,
+}
+
+impl<W: writer::MakeWriter> Rfc3164BufferedLogger<W> {
+    #[inline(always)]
+    ///Creates new instance of logger with internal buffer
+    pub const fn new(inner: Rfc3164Logger<W>) -> Self {
+        Self {
+            inner,
             buffer: Rfc3164Buffer::new(),
         }
     }
 
+    #[inline(always)]
     ///Writes specified string onto syslog
     ///
     ///If text doesn't fit limit of 1024 bytes, then it is split into chunks
-    pub fn write_str(&mut self, severity: Severity, mut text: &str) -> Result<(), W::Error> {
-        let timestamp = match time_c::Time::now_utc() {
-            Some(time_c::Time { sec, min, hour, month_day, month, year, .. }) => syslog::header::Timestamp {
-                year,
-                month: month.saturating_sub(1),
-                day: month_day,
-                hour,
-                sec,
-                min,
-            },
-            None => syslog::header::Timestamp::utc(),
-        };
-        let header = syslog::header::Rfc3164 {
-            pri: severity.priority(self.syslog.facility),
-            hostname: &self.syslog.hostname,
-            tag: &self.syslog.tag,
-            pid: os_id::process::get_raw_id() as _,
-            timestamp,
-        };
-
-        header.write_buffer(&mut self.buffer);
-        self.buffer.push_str(" ");
-        let header_size = self.buffer.len();
-
-        loop {
-            let consumed = self.buffer.push_str(text);
-            text = &text[consumed..];
-
-            self.writer.write_buffer(self.buffer.as_str(), severity, self.syslog.retry_count)?;
-            //This is safe because we know exact header size written
-            unsafe {
-                self.buffer.set_len(header_size);
-            }
-
-            if text.is_empty() {
-                break;
-            }
-        }
-
-        self.buffer.clear();
-        Ok(())
+    pub fn write_str(&mut self, severity: Severity, text: &str) -> Result<(), W::Error> {
+        self.inner.write_str(&mut self.buffer, severity, text)
     }
 }

@@ -23,4 +23,4 @@ jobs:
       valgrind: false
       miri: false
       cargo-no-features: true
-      cargo-features: "std"
+      cargo-features: "std,log04"

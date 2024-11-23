@@ -24,9 +24,16 @@ version = "3.1.0"
 default-features = false
 features = ["process"]
 
+[dependencies.log04]
+package = "log"
+version = "0.4"
+default-features = false
+optional = true
+
 [[test]]
 name = "std"
 required-features = ["std"]
 
 [features]
 std = []
+log04 = ["dep:log04"]
