@@ -5,7 +5,52 @@ use core::{fmt, mem};
 use str_buf::StrBuf;
 
 pub use super::{Facility, Severity};
-use crate::Hostname;
+
+#[repr(transparent)]
+///Hostname, limited to 64 characters
+pub struct Hostname(StrBuf<{ str_buf::capacity(64) }>);
+
+impl Hostname {
+    #[inline]
+    ///Initializes with no hostname, indicating it as `-` when sending to the server.
+    pub const fn none(&self) -> Self {
+        Self(StrBuf::from_str("-"))
+    }
+
+    #[inline]
+    ///Gets tag
+    pub const fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    #[inline]
+    ///Creates new hostname
+    ///
+    ///It verifies that name is non-empty alphanumeric string, returning None otherwise.
+    pub const fn new(name: &str) -> Option<Self> {
+        if name.is_empty() {
+            None
+        } else {
+            match StrBuf::from_str_checked(name) {
+                Ok(buffer) => {
+                    let mut idx = 0;
+                    loop {
+                        let byt = buffer.as_slice()[idx];
+                        if byt.is_ascii_alphanumeric() || byt == b'-' || byt == b'.' {
+                            idx += 1;
+                            if idx >= name.len() {
+                                break Some(Self(buffer));
+                            }
+                        } else {
+                            break None;
+                        }
+                    }
+                }
+                Err(_) => None,
+            }
+        }
+    }
+}
 
 #[repr(transparent)]
 ///Process name

@@ -1,5 +1,4 @@
 use syslog_client::syslog::header;
-use syslog_client::Hostname;
 
 #[test]
 fn should_verify_header_tag_ctor() {
@@ -21,7 +20,7 @@ fn should_generate_rfc3164_header() {
     for idx in 0..64 {
         hostname.push((b'a' + idx % 9) as char);
     }
-    let hostname = Hostname::new(&hostname).expect("to create 64 long hostname");
+    let hostname = header::Hostname::new(&hostname).expect("to create 64 long hostname");
 
     let mut tag = String::new();
     for idx in 0..32 {

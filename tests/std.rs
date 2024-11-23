@@ -2,9 +2,9 @@ use core::time;
 use std::io;
 use std::sync::mpsc;
 
-use syslog_client::syslog::header::Tag;
+use syslog_client::syslog::header::{Tag, Hostname};
 use syslog_client::writer::{InMemory, Udp, Tcp, LOCAL_HOST};
-use syslog_client::{Facility, Hostname, Severity, Syslog};
+use syslog_client::{Facility, Severity, Syslog};
 
 #[test]
 fn should_generate_rfc3164_messages_in_memory() {
