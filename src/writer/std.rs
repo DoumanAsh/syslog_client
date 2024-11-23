@@ -157,3 +157,109 @@ impl Drop for TcpSocket {
         let _ = self.0.shutdown(net::Shutdown::Both);
     }
 }
+
+#[derive(Copy, Clone)]
+///Unix socket writer
+pub struct Unix<'a> {
+    #[cfg_attr(not(unix), allow(dead_code))]
+    path: &'a str,
+    timeout: Option<time::Duration>,
+}
+
+impl Unix<'static> {
+    ///Attempts to find viable system syslog path
+    ///
+    ///Looks into following paths:
+    ///- /dev/log
+    ///- /var/run/syslog
+    ///- /var/run/log
+    pub fn new_system() -> Option<Self> {
+        use std::path::Path;
+
+        static SYSTEM_PATHS: &[&str] = &["/dev/log", "/var/run/syslog", "/var/run/log", "/run/systemd/journal/syslog"];
+
+        for path in SYSTEM_PATHS.into_iter() {
+            let meta = Path::new(path).metadata();
+            if let Ok(meta) = meta {
+                if !meta.is_dir() {
+                    return Some(Self::new(path))
+                }
+            }
+        }
+
+        None
+    }
+}
+
+impl<'a> Unix<'a> {
+    ///Creates new unix socket writer with specified path.
+    ///
+    ///Performs no check whether file actually exists
+    pub const fn new(path: &'a str) -> Self {
+        Self {
+            path,
+            timeout: None,
+        }
+    }
+
+    ///Sets timeout on all socket operations.
+    ///
+    ///Defaults to no setting (i.e. system default)
+    pub const fn with_timeout(mut self, timeout: time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+}
+
+impl<'a> MakeWriter for Unix<'a> {
+    type Error = io::Error;
+    type Writer = UnixSocket;
+
+    #[inline(always)]
+    fn create(&self) -> Result<Self::Writer, Self::Error> {
+        #[cfg(unix)]
+        {
+            let socket = std::os::unix::net::UnixDatagram::unbound()?;
+            socket.connect(self.path)?;
+            if let Some(timeout) = self.timeout {
+                socket.set_write_timeout(Some(timeout))?;
+            }
+            Ok(UnixSocket {
+                socket
+            })
+        }
+
+        #[cfg(not(unix))]
+        {
+            return Err(io::Error::new(io::ErrorKind::Unsupported, "Unix socket is only supported on unix systems"));
+        }
+    }
+}
+///Wrapper over Unix socket
+pub struct UnixSocket {
+    #[cfg(unix)]
+    socket: std::os::unix::net::UnixDatagram,
+}
+
+impl Writer<io::Error> for UnixSocket {
+    #[inline(always)]
+    fn write(&mut self, _severity: Severity, _msg: &str) -> Result<(), io::Error> {
+        #[cfg(unix)]
+        {
+            return self.socket.send(_msg.as_bytes()).map(|_| ());
+        }
+        #[cfg(not(unix))]
+        {
+            return Err(io::Error::new(io::ErrorKind::Unsupported, "Unix socket is only supported on unix systems"));
+        }
+    }
+}
+
+impl Drop for UnixSocket {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            let _ = self.socket.shutdown(std::net::Shutdown::Both);
+        }
+    }
+}

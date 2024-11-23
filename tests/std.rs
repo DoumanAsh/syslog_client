@@ -92,3 +92,23 @@ fn should_generate_rfc3164_messages_tcp() {
         assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn should_generate_rfc3164_messages_unix() {
+    use syslog_client::writer::Unix;
+
+    const TAG: Tag = match Tag::new("unix") {
+        Some(tag) => tag,
+        None => panic!("not valid tag"),
+    };
+    const HOSTNAME: Hostname = match Hostname::new("in.unix") {
+        Some(hostname) => hostname,
+        None => panic!("not valid hostname"),
+    };
+
+    //All unix systems should have it, right?
+    let unix = Unix::new_system().expect("Find syslog socket");
+    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(unix);
+    logger.write_str(Severity::LOG_ERR, "my unix error").expect("Successfully write");
+}
