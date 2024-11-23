@@ -41,7 +41,7 @@ impl<W: Sync + Send + writer::MakeWriter + Clone> Log for Rfc3164Logger<W> where
         metadata.level() <= max_level() && metadata.level() <= STATIC_MAX_LEVEL
     }
 
-    #[inline(always)]
+    #[inline]
     fn log(&self, record: &Record) {
         let level = record.level().into();
         let args = record.args();

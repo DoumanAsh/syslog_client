@@ -4,8 +4,9 @@
 [![Crates.io](https://img.shields.io/crates/v/syslog_client.svg)](https://crates.io/crates/syslog_client)
 [![Documentation](https://docs.rs/syslog_client/badge.svg)](https://docs.rs/crate/syslog_client/)
 
-Syslog writer
+Syslog client
 
 ## Features
 
 - `std` - Enables std types for purpose of implementing transport methods
+- `log04` - Enables integration with `log` 0.4
