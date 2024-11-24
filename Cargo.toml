@@ -7,7 +7,7 @@ description = "Syslog client"
 readme = "README.md"
 repository = "https://github.com/DoumanAsh/syslog_client"
 license = "BSL-1.0"
-keywords = ["syslog", "logger", "tracing"]
+keywords = ["syslog", "logger", "tracing", "rfc3164"]
 include = [
     "**/*.rs",
     "Cargo.toml",
@@ -29,6 +29,12 @@ package = "log"
 version = "0.4"
 default-features = false
 optional = true
+
+[dev-dependencies.log04]
+package = "log"
+version = "0.4"
+default-features = false
+features = ["kv"]
 
 [[test]]
 name = "std"

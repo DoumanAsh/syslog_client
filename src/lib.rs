@@ -1,4 +1,9 @@
-//! Syslog writer
+//! Syslog client
+//!
+//!## Features
+//!
+//!- `std` - Enables std types for purpose of implementing transport methods
+//!- `log04` - Enables integration with `log` 0.4
 
 #![no_std]
 #![warn(missing_docs)]
@@ -88,10 +93,14 @@ impl<'a, W: writer::MakeTransport> Rfc3164RecordWriter<'a, W> {
 
             let consumed = self.buffer.push_str(text);
 
-            if consumed <= text.len() {
+            if consumed < text.len() {
                 self.flush()?;
                 text = &text[consumed..];
                 continue;
+            } else {
+                //Everything consumed, so carry on.
+                //User has to manually flush once he is ready
+                break Ok(());
             }
         }
     }

@@ -112,3 +112,46 @@ fn should_generate_rfc3164_messages_unix() {
     let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(unix).with_buffer();
     logger.write_str(Severity::LOG_ERR, "my unix error").expect("Successfully write");
 }
+
+#[cfg(feature = "log04")]
+#[test]
+fn should_generate_rfc3164_messages_log04() {
+    use syslog_client::log04::Rfc3164Logger;
+
+    const TAG: Tag = match Tag::new("log04") {
+        Some(tag) => tag,
+        None => panic!("not valid tag"),
+    };
+    const HOSTNAME: Hostname = match Hostname::new("in.log04") {
+        Some(hostname) => hostname,
+        None => panic!("not valid hostname"),
+    };
+
+    let (sender, receiver) = mpsc::channel();
+    let syslog = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG);
+    let writer = InMemory::<String>::new(sender);
+    let logger = Rfc3164Logger::new(syslog, writer);
+
+    let _ = log04::set_logger(Box::leak(Box::new(logger)));
+    log04::set_max_level(log04::LevelFilter::Info);
+    log04::info!("Some info log");
+
+    let mut line = receiver.try_recv().expect("to have line");
+
+    println!("line1={line}");
+    let mut line_split = line.rsplitn(2, ':');
+    let log = line_split.next().unwrap();
+    let _header = line_split.next().unwrap();
+    assert_eq!(log, " Some info log");
+
+    log04::debug!("Should not show debug log");
+    assert!(receiver.try_recv().is_err(), "Debug logs are filtered out");
+
+    log04::warn!(error = "ERROR"; "Some warning log");
+    line = receiver.try_recv().expect("to have line");
+    println!("line2={line}");
+    line_split = line.rsplitn(2, ':');
+    let log = line_split.next().unwrap();
+    let _header = line_split.next().unwrap();
+    assert_eq!(log, " Some warning log [KV error=ERROR]");
+}

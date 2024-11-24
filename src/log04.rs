@@ -1,8 +1,8 @@
 //!Implementation for `log` crate interface
 
-use log04::{Log, Metadata, Record, Level, max_level, STATIC_MAX_LEVEL};
+use log04::{kv, Log, Metadata, Record, Level, max_level, STATIC_MAX_LEVEL};
 
-use crate::{writer, Writer, Syslog, Severity, Rfc3164Buffer};
+use crate::{writer, Writer, Syslog, Severity, Rfc3164Buffer, Rfc3164RecordWriter};
 
 use core::fmt;
 
@@ -50,17 +50,70 @@ impl<W: Sync + Send + writer::MakeTransport + Clone> Log for Rfc3164Logger<W> wh
 
         let mut writer = Writer::new(self.writer.clone());
         let mut buffer = Rfc3164Buffer::new();
-        let mut record = self.syslog.rfc3164_record(&mut writer, &mut buffer, level);
+        let mut syslog = self.syslog.rfc3164_record(&mut writer, &mut buffer, level);
         if let Some(log) = args.as_str() {
-            let _ = record.write_str(log);
+            if syslog.write_str(log).is_err() {
+                return;
+            }
         } else {
-            let _ = fmt::Write::write_fmt(&mut record, *args);
+            if fmt::Write::write_fmt(&mut syslog, *args).is_err() {
+                return;
+            }
         }
 
-        let _ = record.flush_without_clear();
+        //Visitor will do final flush
+        let mut key_values_writer = StructuredVisitor {
+            record: syslog,
+            //no key values written unless visit() is called
+            is_written: false,
+        };
+
+        if record.key_values().visit(&mut key_values_writer).is_err() {
+            return;
+        }
     }
 
     #[inline(always)]
     fn flush(&self) {
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn unlikely_write_error() -> kv::Error {
+    kv::Error::msg("Logger unable to flush")
+}
+
+struct StructuredVisitor<'a, W: writer::MakeTransport> {
+    record: Rfc3164RecordWriter<'a, W>,
+    is_written: bool,
+}
+
+impl<'a, W: Sync + Send + writer::MakeTransport> kv::VisitSource<'_> for StructuredVisitor<'a, W> {
+    #[inline(always)]
+    fn visit_pair(&mut self, key: kv::Key<'_>, value: kv::Value<'_>) -> Result<(), kv::Error> {
+        if !self.is_written {
+            if self.record.write_str(" [KV").is_err() {
+                return Err(unlikely_write_error());
+            }
+
+            self.is_written = true;
+        }
+
+        if fmt::Write::write_fmt(&mut self.record, format_args!(" {key}={value}")).is_err() {
+            return Err(unlikely_write_error());
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a, W: writer::MakeTransport> Drop for StructuredVisitor<'a, W> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        if self.is_written {
+            let _ = self.record.write_str("]");
+        }
+        let _ = self.record.flush_without_clear();
     }
 }
