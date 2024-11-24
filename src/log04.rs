@@ -4,6 +4,8 @@ use log04::{Log, Metadata, Record, Level, max_level, STATIC_MAX_LEVEL};
 
 use crate::{writer, Writer, Syslog, Severity, Rfc3164Buffer};
 
+use core::fmt;
+
 ///Syslog with log interface
 ///
 ///In case of non-static record, truncates to fit 1024 bytes limit
@@ -35,7 +37,7 @@ impl From<Level> for Severity {
     }
 }
 
-impl<W: Sync + Send + writer::MakeWriter + Clone> Log for Rfc3164Logger<W> where W::Writer: Sync + Send {
+impl<W: Sync + Send + writer::MakeTransport + Clone> Log for Rfc3164Logger<W> where W::Transport: Sync + Send {
     #[inline(always)]
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= max_level() && metadata.level() <= STATIC_MAX_LEVEL
@@ -48,11 +50,14 @@ impl<W: Sync + Send + writer::MakeWriter + Clone> Log for Rfc3164Logger<W> where
 
         let mut writer = Writer::new(self.writer.clone());
         let mut buffer = Rfc3164Buffer::new();
-        let _ = if let Some(log) = args.as_str() {
-            self.syslog.rfc3164_write_str(&mut writer, &mut buffer, level, log)
+        let mut record = self.syslog.rfc3164_record(&mut writer, &mut buffer, level);
+        if let Some(log) = args.as_str() {
+            let _ = record.write_str(log);
         } else {
-            self.syslog.rfc3164_write_fmt(&mut writer, &mut buffer, level, args)
-        };
+            let _ = fmt::Write::write_fmt(&mut record, *args);
+        }
+
+        let _ = record.flush_without_clear();
     }
 
     #[inline(always)]

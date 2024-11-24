@@ -4,7 +4,7 @@ use core::{ops, time};
 use std::sync::mpsc;
 use std::{io, net};
 
-use super::{MakeWriter, Writer, WriterError};
+use super::{MakeTransport, Transport, TransportError};
 use crate::syslog::Severity;
 
 ///Local host address
@@ -32,24 +32,24 @@ impl<T: for<'a> From<&'a str>> InMemory<T> {
     }
 }
 
-impl<T: for<'a> From<&'a str>> MakeWriter for InMemory<T> {
+impl<T: for<'a> From<&'a str>> MakeTransport for InMemory<T> {
     type Error = mpsc::SendError<T>;
-    type Writer = Self;
+    type Transport = Self;
 
     #[inline(always)]
-    fn create(&self) -> Result<Self::Writer, Self::Error> {
+    fn create(&self) -> Result<Self::Transport, Self::Error> {
         Ok((*self).clone())
     }
 }
 
-impl<T> WriterError for mpsc::SendError<T> {
+impl<T> TransportError for mpsc::SendError<T> {
     #[inline(always)]
     fn is_terminal(&self) -> bool {
         true
     }
 }
 
-impl<T: for<'a> From<&'a str>> Writer<mpsc::SendError<T>> for InMemory<T> {
+impl<T: for<'a> From<&'a str>> Transport<mpsc::SendError<T>> for InMemory<T> {
     #[inline(always)]
     fn write(&mut self, _severity: Severity, msg: &str) -> Result<(), mpsc::SendError<T>> {
         self.0.send(msg.into())
@@ -68,7 +68,7 @@ impl<T> Clone for InMemory<T> {
     }
 }
 
-impl WriterError for io::Error {
+impl TransportError for io::Error {
     #[inline(always)]
     fn is_terminal(&self) -> bool {
         use io::ErrorKind;
@@ -89,19 +89,19 @@ pub struct Udp {
     pub remote_addr: net::SocketAddr,
 }
 
-impl MakeWriter for Udp {
+impl MakeTransport for Udp {
     type Error = io::Error;
-    type Writer = net::UdpSocket;
+    type Transport = net::UdpSocket;
 
     #[inline(always)]
-    fn create(&self) -> Result<Self::Writer, Self::Error> {
+    fn create(&self) -> Result<Self::Transport, Self::Error> {
         let socket = net::UdpSocket::bind((LOCAL_HOST, self.local_port))?;
         socket.connect(self.remote_addr)?;
         Ok(socket)
     }
 }
 
-impl Writer<io::Error> for net::UdpSocket {
+impl Transport<io::Error> for net::UdpSocket {
     #[inline(always)]
     fn write(&mut self, _severity: Severity, msg: &str) -> Result<(), io::Error> {
         self.send(msg.as_bytes()).map(|_| ())
@@ -117,12 +117,12 @@ pub struct Tcp {
     pub timeout: Option<time::Duration>,
 }
 
-impl MakeWriter for Tcp {
+impl MakeTransport for Tcp {
     type Error = io::Error;
-    type Writer = TcpSocket;
+    type Transport = TcpSocket;
 
     #[inline(always)]
-    fn create(&self) -> Result<Self::Writer, Self::Error> {
+    fn create(&self) -> Result<Self::Transport, Self::Error> {
         let socket = match self.timeout {
             Some(timeout) => net::TcpStream::connect_timeout(&self.remote_addr, timeout)?,
             None => net::TcpStream::connect(self.remote_addr)?,
@@ -136,7 +136,7 @@ impl MakeWriter for Tcp {
 ///TCP Socket wrapper which shutdowns socket on Drop
 pub struct TcpSocket(net::TcpStream);
 
-impl Writer<io::Error> for TcpSocket {
+impl Transport<io::Error> for TcpSocket {
     #[inline(always)]
     fn write(&mut self, _severity: Severity, msg: &str) -> Result<(), io::Error> {
         io::Write::write_all(&mut self.0, msg.as_bytes())?;
@@ -211,12 +211,12 @@ impl<'a> Unix<'a> {
     }
 }
 
-impl<'a> MakeWriter for Unix<'a> {
+impl<'a> MakeTransport for Unix<'a> {
     type Error = io::Error;
-    type Writer = UnixSocket;
+    type Transport = UnixSocket;
 
     #[inline(always)]
-    fn create(&self) -> Result<Self::Writer, Self::Error> {
+    fn create(&self) -> Result<Self::Transport, Self::Error> {
         #[cfg(unix)]
         {
             let socket = std::os::unix::net::UnixDatagram::unbound()?;
@@ -241,7 +241,7 @@ pub struct UnixSocket {
     socket: std::os::unix::net::UnixDatagram,
 }
 
-impl Writer<io::Error> for UnixSocket {
+impl Transport<io::Error> for UnixSocket {
     #[inline(always)]
     fn write(&mut self, _severity: Severity, _msg: &str) -> Result<(), io::Error> {
         #[cfg(unix)]

@@ -27,68 +27,21 @@ macro_rules! unreach {
 pub mod syslog;
 pub use syslog::{Facility, Severity};
 pub mod writer;
+use writer::Writer;
 #[cfg(feature = "log04")]
 pub mod log04;
 
 ///Buffer type to hold max possible message as per RFC 3164 (1024 bytes)
 pub type Rfc3164Buffer = str_buf::StrBuf<{ str_buf::capacity(1024) }>;
 
-struct Writer<W: writer::MakeWriter> {
-    writer: W,
-    cached_writer: Option<W::Writer>,
-}
-
-impl<W: writer::MakeWriter> Writer<W> {
-    #[inline(always)]
-    const fn new(writer: W) -> Self {
-        Self {
-            writer,
-            cached_writer: None,
-        }
-    }
-
-    fn write_buffer(&mut self, buffer: &str, severity: Severity, retry_count: u8) -> Result<(), W::Error> {
-        use writer::{Writer, WriterError};
-
-        //We will try once + retry_count
-        let mut retry_attempts = retry_count.saturating_add(1);
-
-        loop {
-            retry_attempts = retry_attempts.saturating_sub(1);
-
-            let mut writer = match self.cached_writer.take() {
-                Some(writer) => writer,
-                None => match self.writer.create() {
-                    Ok(writer) => writer,
-                    //If interface error indicates you cannot proceed then give up immediately
-                    Err(error) if error.is_terminal() => return Err(error),
-                    Err(_) if retry_attempts > 0 => continue,
-                    Err(error) => break Err(error),
-                },
-            };
-
-            match writer.write(severity, buffer) {
-                Ok(()) => {
-                    //Only cache writer, if it is able to write
-                    self.cached_writer = Some(writer);
-                    break Ok(());
-                }
-                //If interface error indicates you cannot proceed then give up immediately
-                //Also there is high risk in caching interface that errors out, so avoid that
-                Err(error) if error.is_terminal() => return Err(error),
-                Err(_) if retry_attempts > 0 => continue,
-                Err(error) => break Err(error),
-            }
-        }
-    }
-}
-
 ///RFC 3164 record writer.
 ///
 ///It can be used to efficiently create logging record via `fmt::Write` interface
 ///
 ///When necessary record will be split into chunks of 1024 bytes
-pub struct Rfc3164RecordWriter<'a, W: writer::MakeWriter> {
+///
+///On Drop internal buffer is cleared
+pub struct Rfc3164RecordWriter<'a, W: writer::MakeTransport> {
     writer: &'a mut Writer<W>,
     buffer: &'a mut Rfc3164Buffer,
     severity: Severity,
@@ -96,7 +49,7 @@ pub struct Rfc3164RecordWriter<'a, W: writer::MakeWriter> {
     retry_count: u8,
 }
 
-impl<'a, W: writer::MakeWriter> Rfc3164RecordWriter<'a, W> {
+impl<'a, W: writer::MakeTransport> Rfc3164RecordWriter<'a, W> {
     #[inline]
     ///Creates new record writer
     fn new(syslog: &'a Syslog, writer: &'a mut Writer<W>, buffer: &'a mut Rfc3164Buffer, severity: Severity) -> Self {
@@ -174,7 +127,14 @@ impl<'a, W: writer::MakeWriter> Rfc3164RecordWriter<'a, W> {
     }
 }
 
-impl<'a, W: writer::MakeWriter> fmt::Write for Rfc3164RecordWriter<'a, W> {
+impl<'a, W: writer::MakeTransport> Drop for Rfc3164RecordWriter<'a, W> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        self.buffer.clear()
+    }
+}
+
+impl<'a, W: writer::MakeTransport> fmt::Write for Rfc3164RecordWriter<'a, W> {
     #[inline]
     fn write_str(&mut self, text: &str) -> fmt::Result {
         if self.write_str(text).is_err() {
@@ -220,38 +180,23 @@ impl Syslog {
 
     #[inline(always)]
     ///Creates RFC-3164 format logger using specified `writer`
-    pub const fn rfc3164<W: writer::MakeWriter>(self, writer: W) -> Rfc3164Logger<W> {
+    pub const fn rfc3164<W: writer::MakeTransport>(self, writer: W) -> Rfc3164Logger<W> {
         Rfc3164Logger::new(self, writer)
     }
 
-    #[cfg(feature = "log04")]
-    fn rfc3164_write_fmt<W: writer::MakeWriter>(&self, writer: &mut Writer<W>, buffer: &mut Rfc3164Buffer, severity: Severity, text: &core::fmt::Arguments<'_>) -> Result<(), W::Error> {
-        let mut record = Rfc3164RecordWriter::new(self, writer, buffer, severity);
-
-        let _ = core::fmt::Write::write_fmt(&mut record, *text);
-        record.flush_without_clear()?;
-        buffer.clear();
-        Ok(())
-    }
-
-    fn rfc3164_write_str<W: writer::MakeWriter>(&self, writer: &mut Writer<W>, buffer: &mut Rfc3164Buffer, severity: Severity, text: &str) -> Result<(), W::Error> {
-        let mut record = Rfc3164RecordWriter::new(self, writer, buffer, severity);
-
-        record.write_str(text)?;
-        record.flush_without_clear()?;
-
-        buffer.clear();
-        Ok(())
+    #[inline(always)]
+    pub(crate) fn rfc3164_record<'a, W: writer::MakeTransport>(&'a self, writer: &'a mut Writer<W>, buffer: &'a mut Rfc3164Buffer, severity: Severity) -> Rfc3164RecordWriter<'a, W> {
+        Rfc3164RecordWriter::new(self, writer, buffer, severity)
     }
 }
 
 ///RFC 3164 logger
-pub struct Rfc3164Logger<W: writer::MakeWriter> {
+pub struct Rfc3164Logger<W: writer::MakeTransport> {
     syslog: Syslog,
     writer: Writer<W>,
 }
 
-impl<W: writer::MakeWriter> Rfc3164Logger<W> {
+impl<W: writer::MakeTransport> Rfc3164Logger<W> {
     #[inline(always)]
     ///Creates new RFC 3164 format logger
     pub const fn new(syslog: Syslog, writer: W) -> Self {
@@ -271,17 +216,20 @@ impl<W: writer::MakeWriter> Rfc3164Logger<W> {
     ///
     ///If text doesn't fit limit of 1024 bytes, then it is split into chunks
     pub fn write_str(&mut self, buffer: &mut Rfc3164Buffer, severity: Severity, text: &str) -> Result<(), W::Error> {
-        self.syslog.rfc3164_write_str(&mut self.writer, buffer, severity, text)
+        let mut record = self.syslog.rfc3164_record(&mut self.writer, buffer, severity);
+
+        record.write_str(text)?;
+        record.flush_without_clear()
     }
 }
 
 ///RFC 3164 logger
-pub struct Rfc3164BufferedLogger<W: writer::MakeWriter> {
+pub struct Rfc3164BufferedLogger<W: writer::MakeTransport> {
     inner: Rfc3164Logger<W>,
     buffer: Rfc3164Buffer,
 }
 
-impl<W: writer::MakeWriter> Rfc3164BufferedLogger<W> {
+impl<W: writer::MakeTransport> Rfc3164BufferedLogger<W> {
     #[inline(always)]
     ///Creates new instance of logger with internal buffer
     pub const fn new(inner: Rfc3164Logger<W>) -> Self {
