@@ -6,6 +6,10 @@
 
 Syslog client
 
+## Loggers
+
+- [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164) - Logger is limited to buffer of 1024 bytes and splits records into chunks with common header
+
 ## Features
 
 - `std` - Enables std types for purpose of implementing transport methods
