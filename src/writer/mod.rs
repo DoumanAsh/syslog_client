@@ -77,8 +77,10 @@ impl<IO: MakeTransport> Writer<IO> {
                 }
                 //If interface error indicates you cannot proceed then give up immediately
                 //Also there is high risk in caching interface that errors out, so avoid that
-                Err(error) if error.is_terminal() => return Err(error),
-                Err(_) if retry_attempts > 0 => continue,
+                Err(error) if error.is_terminal() => continue,
+                Err(_) if retry_attempts > 0 => {
+                    self.cached_writer = Some(writer);
+                },
                 Err(error) => break Err(error),
             }
         }
