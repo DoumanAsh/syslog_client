@@ -7,6 +7,8 @@ use std::{io, net};
 use super::{MakeTransport, Transport, TransportError};
 use crate::syslog::Severity;
 
+const LF: &[u8] = &[b'\n'];
+
 ///Local host address
 ///
 ///For use when you want to connect to locally running service
@@ -140,6 +142,7 @@ impl Transport<io::Error> for TcpSocket {
     #[inline(always)]
     fn write(&mut self, _severity: Severity, msg: &str) -> Result<(), io::Error> {
         io::Write::write_all(&mut self.0, msg.as_bytes())?;
+        io::Write::write_all(&mut self.0, LF)?;
         io::Write::flush(&mut self.0)
     }
 }
