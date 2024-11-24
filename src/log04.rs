@@ -8,7 +8,8 @@ use core::fmt;
 
 ///Syslog with log interface
 ///
-///In case of non-static record, truncates to fit 1024 bytes limit
+///When [key values](https://docs.rs/log/0.4.22/log/struct.Record.html#method.key_values) is
+///available appends it after message in format of [KV [<key>=<value>]...]
 pub struct Rfc3164Logger<W> {
     syslog: Syslog,
     writer: W,
