@@ -179,7 +179,7 @@ impl Unix<'static> {
     pub fn new_system() -> Option<Self> {
         use std::path::Path;
 
-        static SYSTEM_PATHS: &[&str] = &["/dev/log", "/var/run/syslog", "/var/run/log", "/run/systemd/journal/syslog"];
+        static SYSTEM_PATHS: &[&str] = &["/dev/log", "/var/run/syslog", "/var/run/log"];
 
         for path in SYSTEM_PATHS.into_iter() {
             let meta = Path::new(path).metadata();
