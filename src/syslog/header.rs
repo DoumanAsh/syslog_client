@@ -179,7 +179,7 @@ const RFC_3164_SIZE: usize = 3 + 2 //Prio(u8 integer) wrapped in <>
     + 1; //Common part ends with `:`, afterwards we put actual message
 
 impl<'a> Rfc3164<'a> {
-    ///Header size
+    ///Max possible header size
     pub const SIZE: usize = RFC_3164_SIZE;
 
     ///Writes static buffer with this header value
@@ -198,6 +198,58 @@ impl<'a> Rfc3164<'a> {
 
     ///Creates static sized string that holds content of header
     pub fn create_buffer(&self) -> StrBuf<{ str_buf::capacity(RFC_3164_SIZE) }> {
+        let mut out = StrBuf::new();
+        self.write_buffer(&mut out);
+        out
+    }
+}
+
+///RFC 5424 header to the message
+pub struct Rfc5424<'a> {
+    ///Encoded priority
+    pub pri: u8,
+    ///Timestamp
+    pub timestamp: Timestamp,
+    ///Hostname
+    pub hostname: &'a Hostname,
+    ///Process name (tag)
+    pub tag: &'a Tag,
+    ///Process pid
+    ///
+    ///While it is optional, it should be always available so there is no need not to include it
+    pub pid: u32,
+    ///Message id. Use `-` to omit
+    pub msg_id: &'a Tag,
+}
+
+const RFC_5424_SIZE: usize = 3 + 2 //Prio(u8 integer) wrapped in <>
+    + 20 + 1 //Timestamp
+    + mem::size_of::<Hostname>() - 1 + 1 //TLS certificate limit is used arbitrary, but generally it should not be longer than 23 characters. -1 for Hostname length byte
+    + mem::size_of::<Tag>() - 1 + 1 //Process name(tag) type uses extra byte for length so -1
+    + 10 + 1 //Optional PID component(u32 integer)
+    + mem::size_of::<Tag>() - 1; //Message id (limit by tag length) and -1 for byte length
+
+impl Rfc5424<'_> {
+    ///Max possible header size
+    pub const SIZE: usize = RFC_5424_SIZE;
+
+    ///Writes static buffer with this header value
+    ///
+    ///It assumes `out` will be successful because I only use it like that
+    ///
+    ///On success writes `Rfc3164::SIZE` bytes long string
+    pub fn write_buffer(&self, out: &mut impl fmt::Write) {
+        let Self { pri, timestamp, hostname, tag, pid, msg_id } = self;
+        let tag = tag.as_str();
+        let hostname = hostname.as_str();
+        let month = timestamp.month.wrapping_add(1);
+        let msg_id = msg_id.as_str();
+        let Timestamp { year, day, hour, sec, min, .. } = timestamp;
+        let _ = fmt::Write::write_fmt(out, format_args!("<{pri}>{year:>04}-{month:>02}-{day:>02}T{hour:>02}:{min:>02}:{sec:>02}Z {hostname} {tag} {pid} {msg_id}"));
+    }
+
+    ///Creates static sized string that holds content of header
+    pub fn create_buffer(&self) -> StrBuf<{ str_buf::capacity(RFC_5424_SIZE) }> {
         let mut out = StrBuf::new();
         self.write_buffer(&mut out);
         out

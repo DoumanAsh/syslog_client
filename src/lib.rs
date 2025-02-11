@@ -12,6 +12,7 @@
 #![no_std]
 #![warn(missing_docs)]
 #![allow(clippy::style)]
+#![allow(clippy::needless_lifetimes)]
 
 use core::fmt;
 
