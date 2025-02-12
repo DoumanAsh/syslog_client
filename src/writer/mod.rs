@@ -37,6 +37,16 @@ pub trait Transport<ERR: TransportError> {
     fn write(&mut self, severity: Severity, msg: &str) -> Result<(), ERR>;
 }
 
+impl<IO: MakeTransport> MakeTransport for &'_ IO {
+    type Error = IO::Error;
+    type Transport = IO::Transport;
+
+    #[inline(always)]
+    fn create(&self) -> Result<Self::Transport, Self::Error> {
+        MakeTransport::create(*self)
+    }
+}
+
 pub(crate) struct Writer<IO: MakeTransport> {
     transport: IO,
     cached_writer: Option<IO::Transport>,

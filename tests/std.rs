@@ -155,3 +155,62 @@ fn should_generate_rfc3164_messages_log04() {
     let _header = line_split.next().unwrap();
     assert_eq!(log, " Some warning log [KV error=ERROR]");
 }
+
+#[cfg(feature = "tracing")]
+#[test]
+fn should_generate_rfc3164_messages_tracing() {
+    use core::fmt;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use syslog_client::tracing::Rfc3164Layer;
+
+    #[tracing::instrument]
+    fn my_span(key: &str, value: &(impl fmt::Debug + ?Sized)) {
+        tracing::info!(?value, "EVENT(key={key})");
+    }
+
+
+    const TAG: Tag = match Tag::new("tracing") {
+        Some(tag) => tag,
+        None => panic!("not valid tag"),
+    };
+    const HOSTNAME: Hostname = match Hostname::new("in.tracing") {
+        Some(hostname) => hostname,
+        None => panic!("not valid hostname"),
+    };
+
+    let (sender, receiver) = mpsc::channel();
+    let syslog = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG);
+    let writer = InMemory::<String>::new(sender);
+    let logger = Rfc3164Layer::new(syslog, writer);
+
+    let _guard = tracing_subscriber::registry().with(logger).set_default();
+    tracing::info!("Some info log");
+
+    let mut line = receiver.try_recv().expect("to have line");
+
+    println!("line1={line}");
+    let mut line_split = line.rsplitn(2, ':');
+    let log = line_split.next().unwrap();
+    let _header = line_split.next().unwrap();
+    assert_eq!(log, " Some info log");
+
+    tracing::warn!(error = "ERROR", "Some warning log");
+    line = receiver.try_recv().expect("to have line");
+    println!("line2={line}");
+    line_split = line.rsplitn(2, ':');
+    let log = line_split.next().unwrap();
+    let _header = line_split.next().unwrap();
+    assert_eq!(log, " Some warning log error=ERROR");
+
+    my_span("test", "value");
+    line = receiver.try_recv().expect("to have line");
+    println!("line3={line}");
+    line_split = line.rsplitn(2, ':');
+    let log = line_split.next().unwrap();
+    let _header = line_split.next().unwrap();
+    #[cfg(not(feature = "tracing-full"))]
+    assert_eq!(log, " EVENT(key=test) value=\"value\"");
+    #[cfg(feature = "tracing-full")]
+    assert_eq!(log, " EVENT(key=test) value=\"value\" [my_span key=test value=\"value\"]");
+}

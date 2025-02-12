@@ -8,6 +8,8 @@
 //!
 //!- `std` - Enables std types for purpose of implementing transport methods
 //!- `log04` - Enables integration with `log` 0.4
+//!- `tracing` - Enables integration with latest version of `tracing`
+//!- `tracing-full` - Enables capture span content to be printed together with events. Implies `tracing` and `std`.
 
 #![no_std]
 #![warn(missing_docs)]
@@ -40,6 +42,8 @@ pub mod writer;
 use writer::Writer;
 #[cfg(feature = "log04")]
 pub mod log04;
+#[cfg(feature = "tracing")]
+pub mod tracing;
 
 ///Buffer type to hold max possible message as per RFC 3164 (1024 bytes)
 pub type Rfc3164Buffer = str_buf::StrBuf<{ str_buf::capacity(1024) }>;

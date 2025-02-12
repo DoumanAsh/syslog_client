@@ -15,8 +15,8 @@ pub struct Rfc3164Logger<W> {
     writer: W,
 }
 
-impl<W: Clone> Rfc3164Logger<W> {
-    ///Creates new instance which requires writer to be Clone-able
+impl<W> Rfc3164Logger<W> {
+    ///Creates new instance
     pub const fn new(syslog: Syslog, writer: W) -> Self {
         Self {
             syslog,
@@ -38,7 +38,7 @@ impl From<Level> for Severity {
     }
 }
 
-impl<W: Sync + Send + writer::MakeTransport + Clone> Log for Rfc3164Logger<W> where W::Transport: Sync + Send {
+impl<W: Sync + Send + writer::MakeTransport> Log for Rfc3164Logger<W> where W::Transport: Sync + Send {
     #[inline(always)]
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= max_level() && metadata.level() <= STATIC_MAX_LEVEL
@@ -49,7 +49,7 @@ impl<W: Sync + Send + writer::MakeTransport + Clone> Log for Rfc3164Logger<W> wh
         let level = record.level().into();
         let args = record.args();
 
-        let mut writer = Writer::new(self.writer.clone());
+        let mut writer = Writer::new(&self.writer);
         let mut buffer = Rfc3164Buffer::new();
         let mut syslog = self.syslog.rfc3164_record(&mut writer, &mut buffer, level);
         if let Some(log) = args.as_str() {
