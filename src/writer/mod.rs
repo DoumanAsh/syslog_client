@@ -5,8 +5,11 @@ use crate::syslog::Severity;
 
 #[cfg(feature = "std")]
 mod std;
-#[cfg(feature = "std")]
-pub use std::*;
+///Builtin transports
+pub mod transport {
+    #[cfg(feature = "std")]
+    pub use super::std::*;
+}
 
 ///Transport builder trait
 pub trait MakeTransport {

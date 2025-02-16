@@ -155,7 +155,15 @@ impl ops::Deref for TcpSocket {
     }
 }
 
+impl From<net::TcpStream> for TcpSocket {
+    #[inline(always)]
+    fn from(socket: net::TcpStream) -> Self {
+        Self(socket)
+    }
+}
+
 impl Drop for TcpSocket {
+    #[inline(always)]
     fn drop(&mut self) {
         let _ = self.0.shutdown(net::Shutdown::Both);
     }

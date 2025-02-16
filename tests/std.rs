@@ -3,7 +3,7 @@ use std::io;
 use std::sync::mpsc;
 
 use syslog_client::syslog::header::{Tag, Hostname};
-use syslog_client::writer::{InMemory, Udp, Tcp, LOCAL_HOST};
+use syslog_client::writer::transport;
 use syslog_client::{Facility, Severity, Syslog};
 
 #[test]
@@ -18,7 +18,7 @@ fn should_generate_rfc3164_messages_in_memory() {
     };
 
     let (sender, receiver) = mpsc::channel();
-    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(InMemory::<String>::new(sender)).with_buffer();
+    let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(transport::InMemory::<String>::new(sender)).with_buffer();
     logger.write_str(Severity::LOG_ERR, "my error").expect("Success");
 
     let mut line = receiver.try_recv().expect("to have line");
@@ -61,9 +61,9 @@ fn should_generate_rfc3164_messages_udp() {
         None => panic!("not valid hostname"),
     };
 
-    let udp = Udp {
+    let udp = transport::Udp {
         local_port: 65001,
-        remote_addr: (LOCAL_HOST, 5514).into(),
+        remote_addr: (transport::LOCAL_HOST, 5514).into(),
     };
 
     let mut logger = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG).rfc3164(udp).with_buffer();
@@ -81,8 +81,8 @@ fn should_generate_rfc3164_messages_tcp() {
         None => panic!("not valid hostname"),
     };
 
-    let tcp = Tcp {
-        remote_addr: (LOCAL_HOST, 5514).into(),
+    let tcp = transport::Tcp {
+        remote_addr: (transport::LOCAL_HOST, 5514).into(),
         timeout: Some(time::Duration::from_secs(5)),
     };
 
@@ -96,7 +96,7 @@ fn should_generate_rfc3164_messages_tcp() {
 #[cfg(unix)]
 #[test]
 fn should_generate_rfc3164_messages_unix() {
-    use syslog_client::writer::Unix;
+    use syslog_client::writer::transport::Unix;
 
     const TAG: Tag = match Tag::new("unix") {
         Some(tag) => tag,
@@ -129,7 +129,7 @@ fn should_generate_rfc3164_messages_log04() {
 
     let (sender, receiver) = mpsc::channel();
     let syslog = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG);
-    let writer = InMemory::<String>::new(sender);
+    let writer = transport::InMemory::<String>::new(sender);
     let logger = Rfc3164Logger::new(syslog, writer);
 
     let _ = log04::set_logger(Box::leak(Box::new(logger)));
@@ -181,7 +181,7 @@ fn should_generate_rfc3164_messages_tracing() {
 
     let (sender, receiver) = mpsc::channel();
     let syslog = Syslog::new(Facility::LOG_USER, HOSTNAME, TAG);
-    let writer = InMemory::<String>::new(sender);
+    let writer = transport::InMemory::<String>::new(sender);
     let logger = Rfc3164Layer::new(syslog, writer);
 
     let _guard = tracing_subscriber::registry().with(logger).set_default();
