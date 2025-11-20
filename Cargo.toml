@@ -1,6 +1,6 @@
 [package]
 name = "syslog_client"
-version = "1.0.0-beta.4"
+version = "1.0.0-beta.5"
 authors = ["Douman <douman@gmx.se>"]
 edition = "2018"
 description = "Syslog client"
@@ -17,7 +17,7 @@ include = [
 
 [dependencies]
 time-c = "1.0.0-alpha.2"
-str-buf = "4.0.0-beta.1"
+str-buf = "4.0.0"
 
 [dependencies.os-id]
 version = "3.1.0"
